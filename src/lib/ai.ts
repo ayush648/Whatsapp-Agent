@@ -1,10 +1,18 @@
 import OpenAI from "openai";
 import { VFASTRR_SYSTEM_PROMPT } from "@/lib/system-prompt";
 
-const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+let _openai: OpenAI | null = null;
+function openaiClient(): OpenAI {
+  if (!_openai) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+    _openai = new OpenAI({
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKey,
+    });
+  }
+  return _openai;
+}
 
 export interface AIMessage {
   role: "user" | "assistant";
@@ -63,7 +71,7 @@ export async function getAIResponse(messages: AIMessage[]) {
   let lastError: unknown = null;
   for (const model of candidates) {
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient().chat.completions.create({
         model,
         messages: [
           { role: "system", content: VFASTRR_SYSTEM_PROMPT },
