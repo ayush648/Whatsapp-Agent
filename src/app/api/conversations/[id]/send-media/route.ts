@@ -48,10 +48,11 @@ export async function POST(
   const buffer = await file.arrayBuffer();
   const publicUrl = await uploadMedia(buffer, mime);
 
-  await sendWhatsAppMedia(conversation.phone, kind, publicUrl, {
+  const sendResult = await sendWhatsAppMedia(conversation.phone, kind, publicUrl, {
     caption: caption || undefined,
     filename: kind === "document" ? file.name : undefined,
   });
+  const outboundMsgId: string | null = sendResult?.messages?.[0]?.id ?? null;
 
   const { data: msg, error: msgError } = await supabase
     .from("messages")
@@ -63,6 +64,8 @@ export async function POST(
       media_type: kind,
       media_mime_type: mime,
       media_caption: caption,
+      whatsapp_msg_id: outboundMsgId,
+      status: outboundMsgId ? "sent" : null,
     })
     .select()
     .single();

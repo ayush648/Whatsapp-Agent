@@ -24,3 +24,18 @@ create index idx_conversations_updated on conversations(updated_at desc);
 -- Enable Realtime for the dashboard
 alter publication supabase_realtime add table messages;
 alter publication supabase_realtime add table conversations;
+
+-- ─────────────────────────────────────────────────────────────
+-- Migration: delivery status + read tracking (run on existing DB)
+-- ─────────────────────────────────────────────────────────────
+
+alter table messages
+  add column if not exists status text
+    check (status in ('sent', 'delivered', 'read', 'failed')),
+  add column if not exists status_updated_at timestamptz;
+
+alter table conversations
+  add column if not exists last_read_at timestamptz default now();
+
+create index if not exists idx_messages_whatsapp_msg_id on messages(whatsapp_msg_id);
+create index if not exists idx_messages_convo_created on messages(conversation_id, created_at desc);

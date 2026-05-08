@@ -108,6 +108,24 @@ export async function POST(request: NextRequest) {
   const changes = entry?.changes?.[0];
   const value = changes?.value;
 
+  // Delivery status updates (sent/delivered/read/failed) for outbound messages
+  const statuses = value?.statuses as
+    | Array<{ id: string; status: string; timestamp: string }>
+    | undefined;
+  if (statuses?.length) {
+    await Promise.all(
+      statuses.map(async (s) => {
+        if (!["sent", "delivered", "read", "failed"].includes(s.status)) return;
+        const ts = new Date(parseInt(s.timestamp) * 1000).toISOString();
+        await supabase
+          .from("messages")
+          .update({ status: s.status, status_updated_at: ts })
+          .eq("whatsapp_msg_id", s.id);
+      })
+    );
+    return Response.json({ status: "status_updated", count: statuses.length });
+  }
+
   if (!value?.messages?.[0]) {
     return Response.json({ status: "no_message" });
   }
@@ -215,12 +233,15 @@ export async function POST(request: NextRequest) {
 
     const aiResponse = await getAIResponse(aiMessages);
 
-    await sendWhatsAppMessage(phone, aiResponse);
+    const sendResult = await sendWhatsAppMessage(phone, aiResponse);
+    const outboundMsgId: string | null = sendResult?.messages?.[0]?.id ?? null;
 
     await supabase.from("messages").insert({
       conversation_id: conversation.id,
       role: "assistant",
       content: aiResponse,
+      whatsapp_msg_id: outboundMsgId,
+      status: outboundMsgId ? "sent" : null,
     });
 
     await supabase

@@ -48,6 +48,28 @@ export async function sendTypingIndicator(messageId: string) {
   }
 }
 
+export async function markAsRead(messageId: string) {
+  const res = await fetch(
+    `https://graph.facebook.com/v22.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: messageId,
+      }),
+    }
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    console.error("WhatsApp markAsRead failed", res.status, data);
+  }
+}
+
 type WhatsAppMediaKind = "image" | "audio" | "video" | "document";
 
 export async function sendWhatsAppMedia(

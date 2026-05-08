@@ -26,7 +26,8 @@ export async function POST(
   }
 
   // Send via WhatsApp
-  await sendWhatsAppMessage(conversation.phone, message);
+  const sendResult = await sendWhatsAppMessage(conversation.phone, message);
+  const outboundMsgId: string | null = sendResult?.messages?.[0]?.id ?? null;
 
   // Store in DB
   const { data: msg, error: msgError } = await supabase
@@ -35,6 +36,8 @@ export async function POST(
       conversation_id: id,
       role: "assistant",
       content: message,
+      whatsapp_msg_id: outboundMsgId,
+      status: outboundMsgId ? "sent" : null,
     })
     .select()
     .single();

@@ -2,7 +2,32 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
-import type { ConversationWithLastMessage, Message } from "@/lib/types";
+import type { ConversationWithLastMessage, Message, MessageStatus } from "@/lib/types";
+
+function StatusTicks({ status }: { status: MessageStatus | null }) {
+  if (!status) return null;
+  if (status === "failed") {
+    return (
+      <span className="text-red-400" title="Failed to deliver">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      </span>
+    );
+  }
+  const single = status === "sent";
+  const colorClass = status === "read" ? "text-sky-300" : "text-white/50";
+  return (
+    <span className={colorClass} title={status}>
+      <svg width="16" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M0.5 5 L3.5 8 L9.5 1.5" />
+        {!single && <path d="M5.5 5 L7.5 7.5 L13.5 1.5" />}
+      </svg>
+    </span>
+  );
+}
 
 export default function Dashboard() {
   const supabase = useMemo(() => {
@@ -15,11 +40,14 @@ export default function Dashboard() {
   const [conversations, setConversations] = useState<ConversationWithLastMessage[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selected = conversations.find((c) => c.id === selectedId);
@@ -31,9 +59,44 @@ export default function Dashboard() {
   }, []);
 
   const fetchMessages = useCallback(async (convoId: string) => {
-    const res = await fetch(`/api/conversations/${convoId}/messages`);
+    const res = await fetch(`/api/conversations/${convoId}/messages?limit=50`);
     const data = await res.json();
-    setMessages(data);
+    setMessages(data.messages ?? []);
+    setHasMore(!!data.has_more);
+  }, []);
+
+  const loadOlder = useCallback(async () => {
+    if (!selectedId || loadingOlder || !hasMore || messages.length === 0) return;
+    setLoadingOlder(true);
+    const oldest = messages[0].created_at;
+    const scrollEl = messagesScrollRef.current;
+    const prevScrollHeight = scrollEl?.scrollHeight ?? 0;
+    try {
+      const res = await fetch(
+        `/api/conversations/${selectedId}/messages?limit=50&before=${encodeURIComponent(oldest)}`
+      );
+      const data = await res.json();
+      const older: Message[] = data.messages ?? [];
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        return [...older.filter((m) => !seen.has(m.id)), ...prev];
+      });
+      setHasMore(!!data.has_more);
+      // Preserve scroll position so the new content doesn't snap to top
+      requestAnimationFrame(() => {
+        const el = messagesScrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight - prevScrollHeight;
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [selectedId, loadingOlder, hasMore, messages]);
+
+  const markRead = useCallback(async (convoId: string) => {
+    await fetch(`/api/conversations/${convoId}/mark-read`, { method: "POST" });
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convoId ? { ...c, unread_count: 0 } : c))
+    );
   }, []);
 
   useEffect(() => {
@@ -41,12 +104,17 @@ export default function Dashboard() {
   }, [fetchConversations]);
 
   useEffect(() => {
-    if (selectedId) fetchMessages(selectedId);
-  }, [selectedId, fetchMessages]);
+    if (!selectedId) return;
+    fetchMessages(selectedId);
+    markRead(selectedId);
+  }, [selectedId, fetchMessages, markRead]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    // Auto-scroll only when a new message comes in at the bottom (not on load-older prepend)
+    if (!loadingOlder) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, loadingOlder]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -62,8 +130,22 @@ export default function Dashboard() {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
+            // If a new inbound message arrives while chat is open, mark read
+            if (newMsg.role === "user") markRead(selectedId);
           }
           fetchConversations();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          const updated = payload.new as Message;
+          if (updated.conversation_id === selectedId) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m))
+            );
+          }
         }
       )
       .on(
@@ -76,7 +158,7 @@ export default function Dashboard() {
     return () => {
       supabase?.removeChannel(channel);
     };
-  }, [selectedId, fetchConversations, supabase]);
+  }, [selectedId, fetchConversations, supabase, markRead]);
 
   async function toggleMode() {
     if (!selected) return;
@@ -210,15 +292,22 @@ export default function Dashboard() {
                       ) : (
                         <span />
                       )}
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 uppercase tracking-wide ${
-                          convo.mode === "agent"
-                            ? "bg-emerald-500/20 text-emerald-400"
-                            : "bg-amber-500/20 text-amber-400"
-                        }`}
-                      >
-                        {convo.mode === "agent" ? "AI" : "You"}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {convo.unread_count > 0 && (
+                          <span className="text-[10px] min-w-[18px] h-[18px] px-1.5 rounded-full bg-emerald-500 text-white font-semibold flex items-center justify-center">
+                            {convo.unread_count > 99 ? "99+" : convo.unread_count}
+                          </span>
+                        )}
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide ${
+                            convo.mode === "agent"
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : "bg-amber-500/20 text-amber-400"
+                          }`}
+                        >
+                          {convo.mode === "agent" ? "AI" : "You"}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -272,11 +361,23 @@ export default function Dashboard() {
 
             {/* Messages */}
             <div
+              ref={messagesScrollRef}
               className="flex-1 overflow-y-auto px-6 py-5 space-y-4"
               style={{
                 backgroundImage: "radial-gradient(circle at 20% 80%, rgba(16,185,129,0.03) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(16,185,129,0.02) 0%, transparent 50%)",
               }}
             >
+              {hasMore && (
+                <div className="flex justify-center">
+                  <button
+                    onClick={loadOlder}
+                    disabled={loadingOlder}
+                    className="text-[11px] text-white/50 hover:text-white/80 px-3 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors disabled:opacity-50"
+                  >
+                    {loadingOlder ? "Loading..." : "Load older messages"}
+                  </button>
+                </div>
+              )}
               {messages.map((msg, i) => {
                 const isUser = msg.role === "user";
                 const showTime = i === messages.length - 1 || messages[i + 1]?.role !== msg.role;
@@ -329,9 +430,10 @@ export default function Dashboard() {
                         )}
                       </div>
                       {showTime && (
-                        <p className="text-[10px] text-white/25 mt-1.5 px-1">
-                          {!isUser && <span className="text-emerald-500/60 mr-1">AI ·</span>}
-                          {formatTime(msg.created_at)}
+                        <p className="text-[10px] text-white/25 mt-1.5 px-1 flex items-center gap-1">
+                          {!isUser && <span className="text-emerald-500/60">AI ·</span>}
+                          <span>{formatTime(msg.created_at)}</span>
+                          {!isUser && <StatusTicks status={msg.status} />}
                         </p>
                       )}
                     </div>
