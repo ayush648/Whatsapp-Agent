@@ -49,6 +49,7 @@ export default function Dashboard() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isInitialMessagesLoadRef = useRef(true);
 
   const selected = conversations.find((c) => c.id === selectedId);
 
@@ -105,13 +106,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!selectedId) return;
+    isInitialMessagesLoadRef.current = true;
     fetchMessages(selectedId);
     markRead(selectedId);
   }, [selectedId, fetchMessages, markRead]);
 
   useEffect(() => {
-    // Auto-scroll only when a new message comes in at the bottom (not on load-older prepend)
-    if (!loadingOlder) {
+    if (loadingOlder || messages.length === 0) return;
+    if (isInitialMessagesLoadRef.current) {
+      // Conversation just switched — jump instantly, no animation
+      const el = messagesScrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      isInitialMessagesLoadRef.current = false;
+    } else {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, loadingOlder]);
