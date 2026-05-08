@@ -219,17 +219,20 @@ export async function POST(request: NextRequest) {
 
     const { data: history } = await supabase
       .from("messages")
-      .select("role, content, media_url, media_type")
+      .select("role, content, media_url, media_type, created_at")
       .eq("conversation_id", conversation.id)
-      .order("created_at", { ascending: true })
-      .limit(20);
+      .order("created_at", { ascending: false })
+      .limit(10);
 
-    const aiMessages: AIMessage[] = (history || []).map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-      media_url: m.media_url,
-      media_type: m.media_type,
-    }));
+    const aiMessages: AIMessage[] = (history || [])
+      .slice()
+      .reverse()
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        media_url: m.media_url,
+        media_type: m.media_type,
+      }));
 
     const aiResponse = await getAIResponse(aiMessages);
 
@@ -242,6 +245,7 @@ export async function POST(request: NextRequest) {
       content: aiResponse,
       whatsapp_msg_id: outboundMsgId,
       status: outboundMsgId ? "sent" : null,
+      sent_by_ai: true,
     });
 
     await supabase

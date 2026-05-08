@@ -39,3 +39,10 @@ alter table conversations
 
 create index if not exists idx_messages_whatsapp_msg_id on messages(whatsapp_msg_id);
 create index if not exists idx_messages_convo_created on messages(conversation_id, created_at desc);
+
+-- ─────────────────────────────────────────────────────────────
+-- Migration: distinguish AI-generated outbound from human-sent
+-- ─────────────────────────────────────────────────────────────
+
+alter table messages
+  add column if not exists sent_by_ai boolean not null default false;

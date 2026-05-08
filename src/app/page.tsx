@@ -49,6 +49,7 @@ export default function Dashboard() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const isInitialMessagesLoadRef = useRef(true);
 
   const selected = conversations.find((c) => c.id === selectedId);
@@ -201,6 +202,7 @@ export default function Dashboard() {
         });
       }
       setInput("");
+      if (inputRef.current) inputRef.current.style.height = "auto";
       clearAttachment();
       fetchMessages(selectedId);
     } finally {
@@ -438,7 +440,13 @@ export default function Dashboard() {
                       </div>
                       {showTime && (
                         <p className="text-[10px] text-white/25 mt-1.5 px-1 flex items-center gap-1">
-                          {!isUser && <span className="text-emerald-500/60">AI ·</span>}
+                          {!isUser && (
+                            msg.sent_by_ai ? (
+                              <span className="text-emerald-500/60">AI ·</span>
+                            ) : (
+                              <span className="text-amber-400/70">You ·</span>
+                            )
+                          )}
                           <span>{formatTime(msg.created_at)}</span>
                           {!isUser && <StatusTicks status={msg.status} />}
                         </p>
@@ -513,23 +521,34 @@ export default function Dashboard() {
                 onChange={onPickFile}
                 className="hidden"
               />
-              <div className="flex items-center gap-3 bg-white/[0.06] rounded-xl px-4 py-2.5 border border-white/[0.06] focus-within:border-emerald-500/40 transition-colors">
+              <div className="flex items-end gap-3 bg-white/[0.06] rounded-xl px-4 py-2.5 border border-white/[0.06] focus-within:border-emerald-500/40 transition-colors">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-white/40 hover:text-white/80 transition-colors flex-shrink-0"
+                  className="text-white/40 hover:text-white/80 transition-colors flex-shrink-0 mb-1"
                   aria-label="Attach file"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                   </svg>
                 </button>
-                <input
-                  type="text"
+                <textarea
+                  ref={inputRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    const el = e.target;
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   placeholder={attachedFile ? "Add a caption..." : "Type a message..."}
-                  className="flex-1 bg-transparent text-sm text-white/90 placeholder:text-white/25 focus:outline-none"
+                  rows={1}
+                  className="flex-1 bg-transparent text-sm text-white/90 placeholder:text-white/25 focus:outline-none resize-none max-h-40 py-1 leading-relaxed"
                 />
                 <button
                   onClick={handleSend}

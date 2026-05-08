@@ -4,14 +4,24 @@ import { VFASTRR_SYSTEM_PROMPT } from "@/lib/system-prompt";
 let _openai: OpenAI | null = null;
 function openaiClient(): OpenAI {
   if (!_openai) {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
-    _openai = new OpenAI({
-      baseURL: "https://openrouter.ai/api/v1",
-      apiKey,
-    });
+    const openaiKey = process.env.OPENAI_API_KEY;
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+    if (openaiKey) {
+      _openai = new OpenAI({ apiKey: openaiKey });
+    } else if (openrouterKey) {
+      _openai = new OpenAI({
+        baseURL: "https://openrouter.ai/api/v1",
+        apiKey: openrouterKey,
+      });
+    } else {
+      throw new Error("Set OPENAI_API_KEY or OPENROUTER_API_KEY");
+    }
   }
   return _openai;
+}
+
+function isDirectOpenAI() {
+  return !!process.env.OPENAI_API_KEY;
 }
 
 export interface AIMessage {
@@ -45,23 +55,28 @@ function toTextContent(m: AIMessage): string {
   return "";
 }
 
-const TEXT_FALLBACKS = [
-  "z-ai/glm-4.5-air:free",
-  "openai/gpt-oss-20b:free",
-  "openai/gpt-oss-120b:free",
+const OPENROUTER_FALLBACKS = [
+  "openai/gpt-4o-mini",
+  "google/gemini-2.5-flash",
+  "anthropic/claude-haiku-4.5",
 ];
 
+const OPENAI_FALLBACKS = ["gpt-4o-mini", "gpt-4o"];
+
 export async function getAIResponse(messages: AIMessage[]) {
+  const direct = isDirectOpenAI();
   const hasImage = messages.some(
     (m) => m.role === "user" && m.media_type === "image" && m.media_url
   );
   const visionModel = process.env.AI_VISION_MODEL;
-  const textModel = process.env.AI_MODEL || "anthropic/claude-3.5-sonnet";
+  const defaultModel = direct ? "gpt-4o-mini" : "openai/gpt-4o-mini";
+  const textModel = process.env.AI_MODEL || defaultModel;
   const useVision = hasImage && !!visionModel;
+  const fallbacks = direct ? OPENAI_FALLBACKS : OPENROUTER_FALLBACKS;
 
   const candidates = useVision
     ? [visionModel!]
-    : [textModel, ...TEXT_FALLBACKS.filter((m) => m !== textModel)];
+    : [textModel, ...fallbacks.filter((m) => m !== textModel)];
 
   const formatted = messages.map((m) => ({
     role: m.role,

@@ -23,6 +23,7 @@ export interface Message {
   transcript: string | null;
   status: MessageStatus | null;
   status_updated_at: string | null;
+  sent_by_ai: boolean;
 }
 
 export interface ConversationWithLastMessage extends Conversation {
