@@ -1,8 +1,7 @@
-import { PDFParse } from "pdf-parse";
-
 const MAX_CHARS = 8000;
 
 export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   try {
     const result = await parser.getText();
