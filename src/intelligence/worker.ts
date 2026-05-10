@@ -1,4 +1,6 @@
 import { EventListener, type AiEvent } from "./listener";
+import { queue } from "@/lib/intelligence/queue";
+import { enqueueMessageProcessing, registerMessageProcessor } from "./processor";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -19,9 +21,12 @@ if (!DATABASE_URL) {
 }
 
 async function handleEvent(event: AiEvent): Promise<void> {
-  // Sprint 0: log only. Real handlers (extraction, classification, memory)
-  // come in Sprint 1 — this no-op proves the pipe is live.
-  console.log("[worker] event:", JSON.stringify(event));
+  try {
+    await enqueueMessageProcessing(event);
+  } catch (err) {
+    console.error("[worker] failed to enqueue message processing:", err);
+    // Watermark replay (Sprint 6) will catch missed events on next restart.
+  }
 }
 
 const listener = new EventListener(DATABASE_URL, handleEvent);
@@ -32,6 +37,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   console.log(`[worker] received ${signal}, shutting down…`);
   await listener.stop();
+  await queue.stop();
   console.log("[worker] shutdown complete");
   process.exit(0);
 }
@@ -48,8 +54,15 @@ process.on("uncaughtException", (err) => {
   void shutdown("uncaughtException");
 });
 
-console.log("[worker] starting…");
-listener.start().catch((err) => {
+async function main(): Promise<void> {
+  console.log("[worker] starting…");
+  await queue.start();
+  await registerMessageProcessor();
+  console.log("[worker] queue + processor registered");
+  await listener.start(); // blocks until listener is stopped
+}
+
+main().catch((err) => {
   console.error("[worker] fatal:", err);
   process.exit(1);
 });
