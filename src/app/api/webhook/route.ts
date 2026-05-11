@@ -234,7 +234,9 @@ export async function POST(request: NextRequest) {
         media_type: m.media_type,
       }));
 
-    const aiResponse = await getAIResponse(aiMessages);
+    const aiResponse = await getAIResponse(aiMessages, {
+      conversationId: conversation.id,
+    });
 
     const sendResult = await sendWhatsAppMessage(phone, aiResponse);
     const outboundMsgId: string | null = sendResult?.messages?.[0]?.id ?? null;

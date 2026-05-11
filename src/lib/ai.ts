@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { VFASTRR_SYSTEM_PROMPT } from "@/lib/system-prompt";
+import { CHAT_TOOLS, dispatchTool } from "@/lib/chat-tools";
 
 let _openai: OpenAI | null = null;
 function openaiClient(): OpenAI {
@@ -63,7 +64,15 @@ const OPENROUTER_FALLBACKS = [
 
 const OPENAI_FALLBACKS = ["gpt-4o-mini", "gpt-4o"];
 
-export async function getAIResponse(messages: AIMessage[]) {
+export type AIResponseOptions = {
+  /** When provided, the AI gets access to tools (set_reminder etc.) scoped to this conversation. */
+  conversationId?: string;
+};
+
+export async function getAIResponse(
+  messages: AIMessage[],
+  opts: AIResponseOptions = {}
+) {
   const direct = isDirectOpenAI();
   const hasImage = messages.some(
     (m) => m.role === "user" && m.media_type === "image" && m.media_url
@@ -83,22 +92,69 @@ export async function getAIResponse(messages: AIMessage[]) {
     content: useVision ? toVisionContent(m) : toTextContent(m),
   }));
 
+  // Tools enabled only when the caller provides a conversationId AND we're not
+  // routing image input (vision models may not support tools).
+  const toolsEnabled = !!opts.conversationId && !useVision;
+
   let lastError: unknown = null;
   for (const model of candidates) {
     try {
+      const baseMessages = [
+        { role: "system", content: VFASTRR_SYSTEM_PROMPT },
+        ...formatted,
+      ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+
       const completion = await openaiClient().chat.completions.create({
         model,
-        messages: [
-          { role: "system", content: VFASTRR_SYSTEM_PROMPT },
-          ...formatted,
-        ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+        messages: baseMessages,
+        tools: toolsEnabled ? CHAT_TOOLS : undefined,
       });
-      const text = completion.choices[0]?.message?.content;
-      if (text) {
+      const message = completion.choices[0]?.message;
+
+      // Tool-call path: execute the calls, append results, second completion to get final text.
+      if (toolsEnabled && message?.tool_calls && message.tool_calls.length > 0) {
+        const toolRunMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+          // The assistant turn that requested the tools (must be included verbatim)
+          message as OpenAI.Chat.Completions.ChatCompletionMessageParam,
+        ];
+        for (const call of message.tool_calls) {
+          if (call.type !== "function") continue;
+          let parsedArgs: unknown = {};
+          try {
+            parsedArgs = JSON.parse(call.function.arguments || "{}");
+          } catch {
+            // ignore — handler will report missing args
+          }
+          const result = await dispatchTool(call.function.name, parsedArgs, {
+            conversationId: opts.conversationId!,
+          });
+          toolRunMessages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify(result),
+          });
+        }
+
+        const second = await openaiClient().chat.completions.create({
+          model,
+          messages: [...baseMessages, ...toolRunMessages],
+        });
+        const finalText = second.choices[0]?.message?.content;
+        if (finalText) {
+          if (model !== candidates[0]) {
+            console.warn(`AI fallback: used ${model} (primary failed)`);
+          }
+          return finalText;
+        }
+        // If second call gave no content, fall through to try next model.
+        continue;
+      }
+
+      if (message?.content) {
         if (model !== candidates[0]) {
           console.warn(`AI fallback: used ${model} (primary failed)`);
         }
-        return text;
+        return message.content;
       }
     } catch (err) {
       lastError = err;
