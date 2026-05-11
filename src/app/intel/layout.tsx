@@ -24,6 +24,12 @@ export default function IntelLayout({ children }: { children: React.ReactNode })
               Tasks
             </Link>
             <Link
+              href="/intel/approvals"
+              className="text-zinc-700 hover:text-zinc-900 hover:underline"
+            >
+              Approvals
+            </Link>
+            <Link
               href="/intel/audit"
               className="text-zinc-700 hover:text-zinc-900 hover:underline"
             >

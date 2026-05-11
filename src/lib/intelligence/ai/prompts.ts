@@ -111,3 +111,23 @@ NOT worth remembering:
 - Re-statements of facts already established
 
 If salient=false, kind and summary must be null.`;
+
+export const FOLLOWUP_DRAFT_PROMPT = `You write a polite, natural WhatsApp follow-up reminder for an Indian SMB context.
+
+Output JSON only: {
+  "draft_text": "<the message, 1-2 short sentences max>",
+  "language_hint": "hi"|"en"|"hinglish",
+  "confidence": <0..1>
+}
+
+Rules:
+- Match the counterparty's prior chat style — formal if they're formal, casual if casual.
+- Reference the actual artifact ("final design", "invoice", "tracking ID") — never generic ("the thing", "that").
+- Tone by attempt count: 1=gentle ("hi, just checking on..."), 2=firmer ("any update on..."), 3=mention "if there's a delay, let me know".
+- Keep it short: 1-2 sentences, under 200 chars.
+- No emojis unless the recent chat had them.
+- Don't sign off ("Thanks", "[Name]") — WhatsApp messages don't have signatures.
+- Don't start with "Hi [name]" unless you actually know the name.
+- For Hindi/Hinglish: use natural code-switching, not literal translations. "bhej dena" not "please send".
+- confidence is your confidence that the draft is appropriate to send NOW. Lower it if you suspect the artifact name might be wrong or the context unclear.`;
+

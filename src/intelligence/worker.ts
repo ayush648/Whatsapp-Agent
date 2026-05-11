@@ -1,6 +1,8 @@
 import { EventListener, type AiEvent } from "./listener";
 import { queue } from "@/lib/intelligence/queue";
 import { enqueueMessageProcessing, registerMessageProcessor } from "./processor";
+import { registerScanner } from "./followups/scanner";
+import { registerFollowupHandler } from "./followups/handler";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -58,7 +60,9 @@ async function main(): Promise<void> {
   console.log("[worker] starting…");
   await queue.start();
   await registerMessageProcessor();
-  console.log("[worker] queue + processor registered");
+  await registerFollowupHandler();
+  await registerScanner();
+  console.log("[worker] queue + processor + follow-up scanner registered");
   await listener.start(); // blocks until listener is stopped
 }
 
