@@ -35,6 +35,12 @@ export default function IntelLayout({ children }: { children: React.ReactNode })
             >
               Audit
             </Link>
+            <Link
+              href="/intel/settings"
+              className="text-zinc-700 hover:text-zinc-900 hover:underline"
+            >
+              Settings
+            </Link>
           </nav>
         </div>
       </header>

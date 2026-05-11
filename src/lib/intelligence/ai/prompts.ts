@@ -112,6 +112,31 @@ NOT worth remembering:
 
 If salient=false, kind and summary must be null.`;
 
+export const SCHEDULE_PARSE_PROMPT = `Parse a scheduling instruction from an Indian SMB user (Hindi / Hinglish / English).
+
+Output JSON only: {
+  "trigger_at": "<ISO8601 timestamp in UTC, or null>",
+  "recurring_cron": "<5-field cron expression in the user's TZ, or null>",
+  "condition": null | {"type":"no_inbound_since","window_hours":<number>},
+  "action_text": "<what should happen — the reminder content>",
+  "confidence": <0..1>
+}
+
+Context provided in user message: current_time (ISO), user_tz, raw_command.
+
+Rules:
+- One-shot future time → set trigger_at, leave recurring_cron null.
+- Recurring → set recurring_cron, leave trigger_at null (first fire computed from cron).
+- Conditional ("agar reply na aaye to N din baad reminder") → trigger_at = current + N days,
+  condition = {type:'no_inbound_since', window_hours: N*24}.
+- "kal" / "tomorrow" = next day. Default time 10am IST if not specified.
+- "parso" / "day after tomorrow" = +2 days.
+- "shaam" / "evening" = 18:00. "subah" / "morning" = 09:00. "raat" = 21:00.
+- "EOD" / "end of day" = 18:00 same day.
+- "Monday/Sunday/..." → next occurrence of that weekday.
+- action_text in the same language style as the command.
+- If you can't reliably parse a time, set trigger_at=null and confidence < 0.5.`;
+
 export const FOLLOWUP_DRAFT_PROMPT = `You write a polite, natural WhatsApp follow-up reminder for an Indian SMB context.
 
 Output JSON only: {

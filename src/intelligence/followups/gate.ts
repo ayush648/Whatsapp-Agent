@@ -1,6 +1,12 @@
 import { supabase } from "@/lib/supabase";
 import { flags } from "@/lib/intelligence/flags";
 import { killSwitch } from "@/lib/intelligence/safety/kill-switch";
+import {
+  isQuietHour,
+  isWithinBusinessHours,
+  type BusinessHoursConfig,
+  type QuietHoursConfig,
+} from "@/lib/intelligence/scheduling/hours";
 
 export type GateInput = {
   conversationId: string;
@@ -16,18 +22,11 @@ type Settings = {
   mode: string;
   cooldown_hours: number;
   max_followups_per_week: number;
-  business_hours: BusinessHours | null;
-  quiet_hours: QuietHours | null;
+  business_hours: BusinessHoursConfig;
+  quiet_hours: QuietHoursConfig;
   timezone: string;
   follow_up_enabled: boolean;
 };
-
-type BusinessHours = Record<
-  string, // e.g. 'mon','tue',...
-  { start: string; end: string } | null
->;
-
-type QuietHours = { start: string; end: string } | null;
 
 const DEFAULT_SETTINGS: Settings = {
   mode: "observe",
@@ -99,6 +98,7 @@ export async function gateFollowup(input: GateInput, now = new Date()): Promise<
   if (settings.business_hours && !isWithinBusinessHours(settings, now)) {
     return { proceed: false, reason: "outside business hours" };
   }
+  // (Both checks above use shared helpers in lib/intelligence/scheduling/hours.ts)
 
   // 8. Attempt number — count prior proposed/sent follow-ups for THIS task
   const { count: attempts } = await supabase
@@ -127,44 +127,7 @@ async function loadSettings(conversationId: string): Promise<Settings> {
   return {
     ...DEFAULT_SETTINGS,
     ...data,
-    business_hours: (data.business_hours as BusinessHours | null) ?? null,
-    quiet_hours: (data.quiet_hours as QuietHours) ?? null,
+    business_hours: (data.business_hours as BusinessHoursConfig) ?? null,
+    quiet_hours: (data.quiet_hours as QuietHoursConfig) ?? null,
   };
-}
-
-// Hours are stored as 'HH:MM' strings interpreted in the conversation's TZ.
-// Naive parser — works for IST-style usage. Cross-midnight quiet hours
-// (e.g. 21:00 → 08:00) are supported.
-function isQuietHour(settings: Settings, now: Date): boolean {
-  const q = settings.quiet_hours;
-  if (!q) return false;
-  const local = toLocalHHMM(now, settings.timezone);
-  return inRangeHHMM(local, q.start, q.end);
-}
-
-function isWithinBusinessHours(settings: Settings, now: Date): boolean {
-  const bh = settings.business_hours;
-  if (!bh) return true;
-  const localTime = toLocalHHMM(now, settings.timezone);
-  const dayKey = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][
-    new Date(now.toLocaleString("en-US", { timeZone: settings.timezone })).getDay()
-  ];
-  const window = bh[dayKey];
-  if (!window) return false;
-  return inRangeHHMM(localTime, window.start, window.end);
-}
-
-function toLocalHHMM(date: Date, tz: string): string {
-  return date.toLocaleTimeString("en-GB", {
-    timeZone: tz,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function inRangeHHMM(now: string, start: string, end: string): boolean {
-  if (start <= end) return now >= start && now < end;
-  // Crosses midnight: e.g. 21:00 → 08:00
-  return now >= start || now < end;
 }

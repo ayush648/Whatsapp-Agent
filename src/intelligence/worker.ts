@@ -3,6 +3,7 @@ import { queue } from "@/lib/intelligence/queue";
 import { enqueueMessageProcessing, registerMessageProcessor } from "./processor";
 import { registerScanner } from "./followups/scanner";
 import { registerFollowupHandler } from "./followups/handler";
+import { registerReminderHandler } from "./reminders/scheduler";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -62,7 +63,8 @@ async function main(): Promise<void> {
   await registerMessageProcessor();
   await registerFollowupHandler();
   await registerScanner();
-  console.log("[worker] queue + processor + follow-up scanner registered");
+  await registerReminderHandler();
+  console.log("[worker] queue + processor + follow-up scanner + reminder handler registered");
   await listener.start(); // blocks until listener is stopped
 }
 
